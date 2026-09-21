@@ -2,10 +2,14 @@
 //  gemini.js — Gemini API Integration & Adaptive AI Engine
 // ============================================================
 
-// API key & model loaded from config.js (gitignored — see config.example.js)
-if (!window.GEMINI_CONFIG) throw new Error('config.js not loaded. Copy config.example.js → config.js and add your API key.');
+// API key & model — loaded from config.js (gitignored, never pushed to GitHub)
+// To set up: copy config.example.js → config.js and add your own API key
+if (!window.GEMINI_CONFIG || !window.GEMINI_CONFIG.apiKey || window.GEMINI_CONFIG.apiKey === 'YOUR_GEMINI_API_KEY_HERE') {
+  alert('⚠️ API key not configured!\n\n1. Copy config.example.js → config.js\n2. Add your Gemini API key inside config.js\n3. Refresh the page');
+  throw new Error('config.js not found or API key not set. See config.example.js for instructions.');
+}
 const GEMINI_API_KEY = window.GEMINI_CONFIG.apiKey;
-const GEMINI_MODEL   = window.GEMINI_CONFIG.model || 'gemini-2.5-flash';
+const GEMINI_MODEL   = window.GEMINI_CONFIG.model || 'gemini-3.6-flash';
 const GEMINI_URL     = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${GEMINI_API_KEY}`;
 
 // ─── Session State ────────────────────────────────────────────
