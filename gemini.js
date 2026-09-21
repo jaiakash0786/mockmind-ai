@@ -9,8 +9,8 @@ if (!window.GEMINI_CONFIG || !window.GEMINI_CONFIG.apiKey || window.GEMINI_CONFI
   throw new Error('config.js not found or API key not set. See config.example.js for instructions.');
 }
 const GEMINI_API_KEY = window.GEMINI_CONFIG.apiKey;
-const GEMINI_MODEL   = window.GEMINI_CONFIG.model || 'gemini-1.5-flash';
-const GEMINI_URL     = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${GEMINI_API_KEY}`;
+const GEMINI_MODEL = window.GEMINI_CONFIG.model || 'gemini-1.5-flash';
+const GEMINI_URL = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${GEMINI_API_KEY}`;
 
 // ─── Session State ────────────────────────────────────────────
 let conversationHistory = [];  // multi-turn memory
@@ -161,16 +161,16 @@ async function callGemini(messages, systemPrompt = null, retries = 3, maxTokens 
       return data.candidates[0].content.parts[0].text;
     }
 
-    const errData  = await response.json().catch(() => ({}));
-    const status   = response.status;
-    const errMsg   = errData.error?.message || response.statusText || '';
+    const errData = await response.json().catch(() => ({}));
+    const status = response.status;
+    const errMsg = errData.error?.message || response.statusText || '';
 
     // ─ Parse retry delay from API error message (e.g. "Please retry in 27.66s") ─
     const retryMatch = errMsg.match(/retry in ([\d.]+)s/i);
     const suggestedWait = retryMatch ? Math.ceil(parseFloat(retryMatch[1])) : 0;
 
-    const isRateLimit  = status === 429 || errMsg.toLowerCase().includes('quota');
-    const isRetryable  = isRateLimit || status === 503 || status === 500;
+    const isRateLimit = status === 429 || errMsg.toLowerCase().includes('quota');
+    const isRetryable = isRateLimit || status === 503 || status === 500;
 
     if (isRetryable && attempt < retries) {
       // Use suggested wait + 2s buffer, minimum 5s
@@ -223,52 +223,40 @@ async function showCountdown(seconds, label) {
 
 // ─── Parse JSON safely from Gemini output ────────────────────────
 function parseGeminiJSON(text) {
-  // Step 1: strip markdown code fences
+  // Step 1: strip markdown fences
   let cleaned = text
     .replace(/```json\s*/gi, '')
     .replace(/```\s*/g, '')
     .trim();
 
-  // Step 2: extract the first {...} block
+  // Step 2: extract the first { ... } block only
   const start = cleaned.indexOf('{');
   const end   = cleaned.lastIndexOf('}');
-  if (start !== -1 && end !== -1) {
-    cleaned = cleaned.slice(start, end + 1);
-  }
+  if (start !== -1 && end !== -1) cleaned = cleaned.slice(start, end + 1);
 
   // Step 3: try direct parse
-  try {
-    return JSON.parse(cleaned);
-  } catch (_) {}
+  try { return JSON.parse(cleaned); } catch (_) {}
 
   // Step 4: fix common Gemini JSON issues
   const fixed = cleaned
-    .replace(/,\s*([}\]])/g, '$1')          // trailing commas
-    .replace(/([{,]\s*)(\w+)\s*:/g, '$1"$2":') // unquoted keys
-    .replace(/:\s*'([^']*)'/g, ': "$1"')    // single-quoted values
-    .replace(/[\x00-\x1F\x7F]/g, ' ');      // control characters
+    .replace(/,\s*([}\]])/g, '$1')               // trailing commas
+    .replace(/([{,]\s*)(\w+)\s*:/g, '$1"$2":')   // unquoted keys
+    .replace(/:\s*'([^']*)'/g, ': "$1"')          // single-quoted values
+    .replace(/[\x00-\x1F\x7F]/g, ' ');            // control chars
+  try { return JSON.parse(fixed); } catch (_) {}
 
+  // Step 5: repair truncated JSON (response was cut off mid-way)
   try {
-    return JSON.parse(fixed);
-  } catch (_) {}
-
-  // Step 5: if JSON is truncated, try to close it
-  try {
-    const openBraces   = (cleaned.match(/\{/g) || []).length;
-    const closeBraces  = (cleaned.match(/\}/g) || []).length;
-    const openBrackets = (cleaned.match(/\[/g) || []).length;
-    const closeBrackets= (cleaned.match(/\]/g) || []).length;
     let repaired = cleaned;
-    // Close last open string if needed
-    const lastQuote = repaired.lastIndexOf('"');
-    const quoteCount = (repaired.match(/"/g) || []).length;
-    if (quoteCount % 2 !== 0) repaired = repaired + '"';
-    // Close arrays and objects
-    for (let i = 0; i < openBrackets - closeBrackets; i++) repaired += ']';
-    for (let i = 0; i < openBraces  - closeBraces;  i++) repaired += '}';
+    const qCount = (repaired.match(/"/g) || []).length;
+    if (qCount % 2 !== 0) repaired += '"';                                    // close open string
+    const ob = (repaired.match(/\{/g)||[]).length, cb = (repaired.match(/\}/g)||[]).length;
+    const oa = (repaired.match(/\[/g)||[]).length, ca = (repaired.match(/\]/g)||[]).length;
+    for (let i = 0; i < oa - ca; i++) repaired += ']';                        // close open arrays
+    for (let i = 0; i < ob - cb; i++) repaired += '}';                        // close open objects
     return JSON.parse(repaired);
   } catch (e) {
-    throw new Error('Could not parse Gemini response as JSON: ' + e.message);
+    throw new Error('Could not parse Gemini JSON: ' + e.message);
   }
 }
 
@@ -358,32 +346,22 @@ async function submitAnswer(userAnswer) {
 async function generateFeedback() {
   const qaHistory = questionScores;
 
-  // Simplified prompt to avoid truncation — only essential fields
-  const feedbackPrompt = `You are an expert interview coach. Analyse this interview session and respond with ONLY a valid JSON object (no markdown, no extra text).
+  // Compact prompt — short strings prevent token-limit truncation
+  const feedbackPrompt =
+`You are an expert interview coach. Respond with ONLY a valid JSON object — no markdown, no commentary.
 
 Mode: ${sessionConfig.mode === 'subject' ? 'Technical' : 'Behavioural'}
 Topics: ${sessionConfig.mode === 'subject' ? sessionConfig.subjects.join(', ') : sessionConfig.categories.join(', ')}
 
-Q&A:
-${qaHistory.map((h, i) => `Q${i+1}: ${h.question}\nA: ${h.answer}\nScore: ${h.score}/10`).join('\n\n')}
+Interview Q&A (scored 1-10):
+${qaHistory.map((h, i) => `Q${i+1}: ${h.question.substring(0,120)}\nA: ${h.answer.substring(0,120)}\nScore: ${h.score}/10`).join('\n\n')}
 
-Return this exact JSON structure (keep all strings short — max 80 chars each):
-{
-  "overallScore": 7.5,
-  "overallGrade": "Good",
-  "summary": "brief 2-sentence summary",
-  "strengths": ["strength 1", "strength 2"],
-  "areasToImprove": ["area 1", "area 2"],
-  "perQuestion": [
-    {"question": "q text", "answer": "a text", "score": 7, "feedback": "brief feedback", "idealPoints": ["point 1"]}
-  ],
-  "recommendedTopics": ["topic 1", "topic 2"],
-  "nextSteps": "brief next steps"
-}`;
+Return EXACTLY this JSON (strings max 100 chars, no trailing commas):
+{"overallScore":7.5,"overallGrade":"Good","summary":"2 sentence summary.","strengths":["s1","s2"],"areasToImprove":["a1","a2"],"perQuestion":[{"question":"q","answer":"a","score":7,"feedback":"brief","idealPoints":["p1"]}],"recommendedTopics":["t1","t2"],"nextSteps":"brief next step."}`;
 
   const messages = [{ role: 'user', parts: [{ text: feedbackPrompt }] }];
 
-  // Higher token limit for feedback response
+  // 3000 tokens — enough for full feedback without truncation
   const rawText = await callGemini(messages, null, 3, 3000);
   return parseGeminiJSON(rawText);
 }
