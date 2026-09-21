@@ -1,0 +1,324 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>MockMind AI — Smart Interview Practice</title>
+  <meta name="description" content="MockMind is an AI-powered interview preparation platform. Practice technical and behavioural questions with adaptive difficulty and real-time voice or chat interaction." />
+
+  <!-- Preconnect for performance -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+<!-- Floating Background Orbs -->
+<div class="bg-orbs" aria-hidden="true"></div>
+
+<!-- Loading Overlay -->
+<div class="loading-overlay" id="loading-overlay" role="status" aria-live="polite">
+  <div class="spinner"></div>
+  <div class="loading-text" id="loading-text">AI is thinking...</div>
+</div>
+
+<!-- Error Toast -->
+<div class="toast" id="toast" role="alert" aria-live="assertive"></div>
+
+<!-- ════════════════════════════════════════════════════════════
+     APP ROOT
+     ════════════════════════════════════════════════════════════ -->
+<div id="app">
+
+  <!-- ──────────────────────────────────────────────────────────
+       PAGE 1 — SETUP / LANDING
+       ────────────────────────────────────────────────────────── -->
+  <div id="page-setup" class="page">
+
+    <!-- Navbar -->
+    <nav class="navbar">
+      <div class="logo">
+        <div class="logo-icon">🧠</div>
+        MockMind AI
+      </div>
+      <div style="display:flex;align-items:center;gap:10px">
+        <span class="badge badge-purple">✨ Powered by Gemini</span>
+      </div>
+    </nav>
+
+    <!-- Hero -->
+    <section class="hero">
+      <div class="hero-badge">🎯 AI-Powered Interview Practice</div>
+      <h1>
+        Ace Your Next<br />
+        <span class="gradient-text">Interview with AI</span>
+      </h1>
+      <p>
+        Practice with an adaptive AI interviewer that adjusts difficulty based on your answers,
+        asks cross-questions, and gives real-time feedback — in voice or chat mode.
+      </p>
+    </section>
+
+    <!-- Mode Cards -->
+    <div class="mode-grid">
+      <div class="glass-card mode-card" data-mode="subject" onclick="selectMode('subject')" id="card-subject" tabindex="0" role="button" aria-label="Select Subject-Wise Interview mode">
+        <span class="mode-icon">🎯</span>
+        <h3>Subject-Wise Technical</h3>
+        <p>Pick your subjects — Python, DSA, SQL, ML, System Design & more. AI adapts to your skill level.</p>
+      </div>
+      <div class="glass-card mode-card" data-mode="behavioural" onclick="selectMode('behavioural')" id="card-behavioural" tabindex="0" role="button" aria-label="Select Behavioural Interview mode">
+        <span class="mode-icon">🧠</span>
+        <h3>Behavioural Interview</h3>
+        <p>Leadership, teamwork, conflict resolution and more — practice answering like a top candidate.</p>
+      </div>
+    </div>
+
+    <!-- ── SUBJECT CONFIG PANEL ── -->
+    <div class="config-panel" id="config-subject">
+      <div class="glass-card">
+
+        <!-- Subjects -->
+        <div class="config-section">
+          <h4>📚 Select Subjects <span style="color:var(--text-muted);font-size:0.75rem;text-transform:none;font-weight:400">(pick one or more)</span></h4>
+          <div class="chip-grid" id="subject-chips"></div>
+        </div>
+
+        <!-- Difficulty -->
+        <div class="config-section">
+          <h4>⚡ Starting Difficulty</h4>
+          <div class="difficulty-track">
+            <button class="diff-btn" data-level="beginner"     data-prefix="s" onclick="selectDifficulty(this,'s')">Beginner</button>
+            <button class="diff-btn" data-level="intermediate" data-prefix="s" onclick="selectDifficulty(this,'s')">Intermediate</button>
+            <button class="diff-btn" data-level="advanced"     data-prefix="s" onclick="selectDifficulty(this,'s')">Advanced</button>
+            <button class="diff-btn" data-level="expert"       data-prefix="s" onclick="selectDifficulty(this,'s')">Expert</button>
+          </div>
+        </div>
+
+        <!-- Question Count -->
+        <div class="config-section">
+          <h4>🔢 Number of Questions</h4>
+          <div class="count-selector">
+            <button class="count-btn" data-count="5"  data-count-prefix="s" onclick="selectCount(this,'s')">5</button>
+            <button class="count-btn" data-count="10" data-count-prefix="s" onclick="selectCount(this,'s')">10</button>
+            <button class="count-btn" data-count="15" data-count-prefix="s" onclick="selectCount(this,'s')">15</button>
+          </div>
+        </div>
+
+        <!-- Input Mode -->
+        <div class="config-section">
+          <h4>🎙️ Input Mode</h4>
+          <div class="toggle-group">
+            <button class="toggle-btn" data-input="chat" data-toggle-prefix="s" onclick="selectInputMode('chat','s')">💬 Chat</button>
+            <button class="toggle-btn" data-input="voice" data-toggle-prefix="s" onclick="selectInputMode('voice','s')">🎤 Voice</button>
+          </div>
+        </div>
+
+        <div class="start-section">
+          <button class="btn btn-primary btn-start" id="start-btn-subject" onclick="startInterview()">
+            🚀 Start Technical Interview
+          </button>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- ── BEHAVIOURAL CONFIG PANEL ── -->
+    <div class="config-panel" id="config-behavioural">
+      <div class="glass-card">
+
+        <!-- Categories -->
+        <div class="config-section">
+          <h4>🏆 Select Categories <span style="color:var(--text-muted);font-size:0.75rem;text-transform:none;font-weight:400">(pick one or more)</span></h4>
+          <div class="chip-grid" id="category-chips"></div>
+        </div>
+
+        <!-- Difficulty -->
+        <div class="config-section">
+          <h4>⚡ Starting Difficulty</h4>
+          <div class="difficulty-track">
+            <button class="diff-btn" data-level="beginner"     data-prefix="b" onclick="selectDifficulty(this,'b')">Beginner</button>
+            <button class="diff-btn" data-level="intermediate" data-prefix="b" onclick="selectDifficulty(this,'b')">Intermediate</button>
+            <button class="diff-btn" data-level="advanced"     data-prefix="b" onclick="selectDifficulty(this,'b')">Advanced</button>
+            <button class="diff-btn" data-level="expert"       data-prefix="b" onclick="selectDifficulty(this,'b')">Expert</button>
+          </div>
+        </div>
+
+        <!-- Question Count -->
+        <div class="config-section">
+          <h4>🔢 Number of Questions</h4>
+          <div class="count-selector">
+            <button class="count-btn" data-count="5"  data-count-prefix="b" onclick="selectCount(this,'b')">5</button>
+            <button class="count-btn" data-count="10" data-count-prefix="b" onclick="selectCount(this,'b')">10</button>
+            <button class="count-btn" data-count="15" data-count-prefix="b" onclick="selectCount(this,'b')">15</button>
+          </div>
+        </div>
+
+        <!-- Input Mode -->
+        <div class="config-section">
+          <h4>🎙️ Input Mode</h4>
+          <div class="toggle-group">
+            <button class="toggle-btn" data-input="chat"  data-toggle-prefix="b" onclick="selectInputMode('chat','b')">💬 Chat</button>
+            <button class="toggle-btn" data-input="voice" data-toggle-prefix="b" onclick="selectInputMode('voice','b')">🎤 Voice</button>
+          </div>
+        </div>
+
+        <div class="start-section">
+          <button class="btn btn-primary btn-start" id="start-btn-behavioural" onclick="startInterview()">
+            🚀 Start Behavioural Interview
+          </button>
+        </div>
+
+      </div>
+    </div>
+
+  </div><!-- /page-setup -->
+
+
+  <!-- ──────────────────────────────────────────────────────────
+       PAGE 2 — CHAT / INTERVIEW
+       ────────────────────────────────────────────────────────── -->
+  <div id="page-chat" class="page">
+
+    <!-- Chat Header -->
+    <header class="chat-header">
+      <div class="logo">
+        <div class="logo-icon">🧠</div>
+        MockMind
+      </div>
+
+      <div class="chat-meta">
+        <span id="chat-mode-badge"></span>
+        <span class="badge" id="difficulty-badge">intermediate</span>
+      </div>
+
+      <div class="progress-info">
+        <span class="progress-text" id="progress-text">Q0 / 10</span>
+        <div class="progress-bar-wrap">
+          <div class="progress-bar-fill" id="progress-bar-fill" style="width:0%"></div>
+        </div>
+        <button class="btn btn-ghost" style="padding:6px 14px;font-size:0.78rem" onclick="restartApp()" title="End session and restart">✕ End</button>
+      </div>
+    </header>
+
+    <!-- Messages -->
+    <main class="messages-area" id="messages-area" aria-live="polite" aria-label="Interview conversation"></main>
+
+    <!-- Input Area -->
+    <footer class="chat-input-area">
+      <div class="chat-input-inner">
+
+        <!-- Mode switcher row -->
+        <div class="input-mode-row">
+          <span style="font-size:0.78rem;color:var(--text-muted)">Input mode:</span>
+          <div class="input-mode-mini">
+            <button class="mode-mini-btn" data-input="chat"  onclick="switchChatInputMode('chat')"  id="mini-chat-btn">💬 Chat</button>
+            <button class="mode-mini-btn" data-input="voice" onclick="switchChatInputMode('voice')" id="mini-voice-btn">🎤 Voice</button>
+          </div>
+        </div>
+
+        <!-- Voice Panel -->
+        <div class="voice-panel" id="voice-panel">
+          <div class="waveform" aria-hidden="true">
+            <div class="wave-bar"></div>
+            <div class="wave-bar"></div>
+            <div class="wave-bar"></div>
+            <div class="wave-bar"></div>
+            <div class="wave-bar"></div>
+            <div class="wave-bar"></div>
+            <div class="wave-bar"></div>
+            <div class="wave-bar"></div>
+            <div class="wave-bar"></div>
+          </div>
+          <div id="live-transcript" aria-live="polite" aria-label="Live speech transcript"></div>
+          <button class="mic-btn" id="mic-btn" onclick="toggleMic()" title="Click to record / stop" aria-label="Microphone — click to speak">🎤</button>
+          <p id="voice-status-text" style="font-size:0.8rem;color:var(--text-secondary)">Click the mic to answer</p>
+        </div>
+
+        <!-- Text Panel -->
+        <div class="text-panel" id="text-panel">
+          <textarea
+            id="user-input"
+            placeholder="Type your answer here... (Enter to send, Shift+Enter for new line)"
+            rows="1"
+            oninput="autoResize(this)"
+            aria-label="Your answer input"
+          ></textarea>
+          <button class="send-btn" id="send-btn" onclick="handleChatSend()" title="Send answer" aria-label="Send answer">➤</button>
+        </div>
+
+      </div>
+    </footer>
+
+  </div><!-- /page-chat -->
+
+
+  <!-- ──────────────────────────────────────────────────────────
+       PAGE 3 — SUMMARY / FEEDBACK
+       ────────────────────────────────────────────────────────── -->
+  <div id="page-summary" class="page">
+    <div class="summary-inner">
+
+      <!-- Header / Score -->
+      <div class="summary-header">
+        <div class="score-ring" id="score-ring">
+          <div class="score-value" id="score-value">–/10</div>
+        </div>
+        <h1>Interview Complete! 🎉</h1>
+        <h2 id="score-grade" style="font-size:1.2rem;font-weight:600;color:var(--brand-purple);margin-bottom:8px"></h2>
+        <p id="score-summary"></p>
+      </div>
+
+      <!-- Strengths + Improve -->
+      <div class="summary-grid">
+        <div class="glass-card summary-card">
+          <h4>✅ Strengths</h4>
+          <ul class="summary-list" id="strengths-list">
+            <li>Loading...</li>
+          </ul>
+        </div>
+        <div class="glass-card summary-card">
+          <h4>📈 Areas to Improve</h4>
+          <ul class="summary-list" id="improve-list">
+            <li>Loading...</li>
+          </ul>
+        </div>
+      </div>
+
+      <!-- Per-Question Breakdown -->
+      <div class="glass-card summary-card" style="margin-bottom:16px">
+        <h4>📋 Question-by-Question Breakdown</h4>
+      </div>
+      <div class="breakdown-list" id="breakdown-list"></div>
+
+      <!-- Recommended Topics -->
+      <div class="glass-card summary-card" style="margin-bottom:16px">
+        <h4>📚 Recommended Topics to Study</h4>
+        <div class="recommended-grid" id="recommended-topics"></div>
+      </div>
+
+      <!-- Next Steps -->
+      <div class="glass-card summary-card" style="margin-bottom:16px">
+        <h4>🚀 Next Steps</h4>
+        <p id="next-steps-text" style="font-size:0.88rem;color:var(--text-secondary);line-height:1.7"></p>
+      </div>
+
+      <!-- Actions -->
+      <div class="summary-actions">
+        <button class="btn btn-primary" onclick="restartApp()">🔄 Start New Interview</button>
+        <button class="btn btn-ghost" onclick="window.print()">🖨️ Print Report</button>
+      </div>
+
+    </div>
+  </div><!-- /page-summary -->
+
+</div><!-- /app -->
+
+<!-- Scripts: config first (API key), then engines, then app controller -->
+<script src="config.js"></script>
+<script src="gemini.js"></script>
+<script src="voice.js"></script>
+<script src="app.js"></script>
+
+</body>
+</html>
