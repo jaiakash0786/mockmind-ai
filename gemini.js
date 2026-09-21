@@ -9,7 +9,7 @@ if (!window.GEMINI_CONFIG || !window.GEMINI_CONFIG.apiKey || window.GEMINI_CONFI
   throw new Error('config.js not found or API key not set. See config.example.js for instructions.');
 }
 const GEMINI_API_KEY = window.GEMINI_CONFIG.apiKey;
-const GEMINI_MODEL   = window.GEMINI_CONFIG.model || 'gemini-3.6-flash';
+const GEMINI_MODEL   = window.GEMINI_CONFIG.model || 'gemini-1.5-flash';
 const GEMINI_URL     = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${GEMINI_API_KEY}`;
 
 // ─── Session State ────────────────────────────────────────────
@@ -133,22 +133,20 @@ Provide a detailed JSON feedback object:
 }`;
 }
 
-// ─── Core API Call (with retry) ──────────────────────────────
-async function callGemini(messages, systemPrompt = null, retries = 3) {
+// ─── Core API Call (with smart retry + countdown) ────────────────
+async function callGemini(messages, systemPrompt = null, retries = 3, maxTokens = 1024) {
   const body = {
     contents: messages,
     generationConfig: {
       temperature: 0.7,
       topK: 40,
       topP: 0.95,
-      maxOutputTokens: 1024,
+      maxOutputTokens: maxTokens,
     }
   };
 
   if (systemPrompt) {
-    body.systemInstruction = {
-      parts: [{ text: systemPrompt }]
-    };
+    body.systemInstruction = { parts: [{ text: systemPrompt }] };
   }
 
   for (let attempt = 1; attempt <= retries; attempt++) {
@@ -163,32 +161,114 @@ async function callGemini(messages, systemPrompt = null, retries = 3) {
       return data.candidates[0].content.parts[0].text;
     }
 
-    const err = await response.json().catch(() => ({}));
-    const status = response.status;
-    const isRetryable = status === 503 || status === 429 || status === 500;
+    const errData  = await response.json().catch(() => ({}));
+    const status   = response.status;
+    const errMsg   = errData.error?.message || response.statusText || '';
+
+    // ─ Parse retry delay from API error message (e.g. "Please retry in 27.66s") ─
+    const retryMatch = errMsg.match(/retry in ([\d.]+)s/i);
+    const suggestedWait = retryMatch ? Math.ceil(parseFloat(retryMatch[1])) : 0;
+
+    const isRateLimit  = status === 429 || errMsg.toLowerCase().includes('quota');
+    const isRetryable  = isRateLimit || status === 503 || status === 500;
 
     if (isRetryable && attempt < retries) {
-      const delay = Math.pow(2, attempt) * 1000; // 2s, 4s, 8s
-      console.warn(`Gemini ${status} — retrying in ${delay/1000}s (attempt ${attempt}/${retries})...`);
-      await new Promise(r => setTimeout(r, delay));
+      // Use suggested wait + 2s buffer, minimum 5s
+      const waitSec = suggestedWait > 0 ? suggestedWait + 2 : Math.pow(2, attempt) * 2;
+
+      if (isRateLimit) {
+        // Show countdown in the UI
+        await showCountdown(waitSec, `⏳ Rate limit hit — retrying in`);
+      } else {
+        console.warn(`Gemini ${status} — retrying in ${waitSec}s (attempt ${attempt}/${retries})...`);
+        await new Promise(r => setTimeout(r, waitSec * 1000));
+      }
       continue;
     }
 
-    throw new Error(`Gemini API Error: ${err.error?.message || response.statusText}`);
+    throw new Error(`Gemini API Error: ${errMsg}`);
   }
 }
 
-// ─── Parse JSON safely from Gemini output ────────────────────
+// ─── Countdown Helper ────────────────────────────────────────────
+async function showCountdown(seconds, label) {
+  return new Promise(resolve => {
+    let remaining = seconds;
+    const toast = document.getElementById('toast');
+
+    // Reuse the toast element for the countdown
+    const update = () => {
+      if (toast) {
+        toast.textContent = `${label} ${remaining}s...`;
+        toast.style.background = 'rgba(255,255,255,0.06)';
+        toast.style.borderColor = 'rgba(255,255,255,0.2)';
+        toast.style.color = '#d1d5db';
+        toast.classList.add('visible');
+      }
+    };
+
+    update();
+    const interval = setInterval(() => {
+      remaining--;
+      if (remaining <= 0) {
+        clearInterval(interval);
+        if (toast) toast.classList.remove('visible');
+        resolve();
+      } else {
+        update();
+      }
+    }, 1000);
+  });
+}
+
+// ─── Parse JSON safely from Gemini output ────────────────────────
 function parseGeminiJSON(text) {
+  // Step 1: strip markdown code fences
+  let cleaned = text
+    .replace(/```json\s*/gi, '')
+    .replace(/```\s*/g, '')
+    .trim();
+
+  // Step 2: extract the first {...} block
+  const start = cleaned.indexOf('{');
+  const end   = cleaned.lastIndexOf('}');
+  if (start !== -1 && end !== -1) {
+    cleaned = cleaned.slice(start, end + 1);
+  }
+
+  // Step 3: try direct parse
   try {
-    // Remove markdown code fences if present
-    const cleaned = text.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
     return JSON.parse(cleaned);
+  } catch (_) {}
+
+  // Step 4: fix common Gemini JSON issues
+  const fixed = cleaned
+    .replace(/,\s*([}\]])/g, '$1')          // trailing commas
+    .replace(/([{,]\s*)(\w+)\s*:/g, '$1"$2":') // unquoted keys
+    .replace(/:\s*'([^']*)'/g, ': "$1"')    // single-quoted values
+    .replace(/[\x00-\x1F\x7F]/g, ' ');      // control characters
+
+  try {
+    return JSON.parse(fixed);
+  } catch (_) {}
+
+  // Step 5: if JSON is truncated, try to close it
+  try {
+    const openBraces   = (cleaned.match(/\{/g) || []).length;
+    const closeBraces  = (cleaned.match(/\}/g) || []).length;
+    const openBrackets = (cleaned.match(/\[/g) || []).length;
+    const closeBrackets= (cleaned.match(/\]/g) || []).length;
+    let repaired = cleaned;
+    // Close last open string if needed
+    const lastQuote = repaired.lastIndexOf('"');
+    const quoteCount = (repaired.match(/"/g) || []).length;
+    if (quoteCount % 2 !== 0) repaired = repaired + '"';
+    // Close arrays and objects
+    for (let i = 0; i < openBrackets - closeBrackets; i++) repaired += ']';
+    for (let i = 0; i < openBraces  - closeBraces;  i++) repaired += '}';
+    return JSON.parse(repaired);
   } catch (e) {
-    // Fallback: extract JSON object from text
-    const match = text.match(/\{[\s\S]*\}/);
-    if (match) return JSON.parse(match[0]);
-    throw new Error('Could not parse Gemini response as JSON');
+    throw new Error('Could not parse Gemini response as JSON: ' + e.message);
   }
 }
 
@@ -276,15 +356,35 @@ async function submitAnswer(userAnswer) {
 
 // ─── Public: Generate Final Feedback ─────────────────────────
 async function generateFeedback() {
-  // Extract Q&A pairs from history for the feedback prompt
   const qaHistory = questionScores;
-  const feedbackPrompt = buildFeedbackPrompt(qaHistory, sessionConfig);
 
-  const messages = [
-    { role: 'user', parts: [{ text: feedbackPrompt }] }
-  ];
+  // Simplified prompt to avoid truncation — only essential fields
+  const feedbackPrompt = `You are an expert interview coach. Analyse this interview session and respond with ONLY a valid JSON object (no markdown, no extra text).
 
-  const rawText = await callGemini(messages);
+Mode: ${sessionConfig.mode === 'subject' ? 'Technical' : 'Behavioural'}
+Topics: ${sessionConfig.mode === 'subject' ? sessionConfig.subjects.join(', ') : sessionConfig.categories.join(', ')}
+
+Q&A:
+${qaHistory.map((h, i) => `Q${i+1}: ${h.question}\nA: ${h.answer}\nScore: ${h.score}/10`).join('\n\n')}
+
+Return this exact JSON structure (keep all strings short — max 80 chars each):
+{
+  "overallScore": 7.5,
+  "overallGrade": "Good",
+  "summary": "brief 2-sentence summary",
+  "strengths": ["strength 1", "strength 2"],
+  "areasToImprove": ["area 1", "area 2"],
+  "perQuestion": [
+    {"question": "q text", "answer": "a text", "score": 7, "feedback": "brief feedback", "idealPoints": ["point 1"]}
+  ],
+  "recommendedTopics": ["topic 1", "topic 2"],
+  "nextSteps": "brief next steps"
+}`;
+
+  const messages = [{ role: 'user', parts: [{ text: feedbackPrompt }] }];
+
+  // Higher token limit for feedback response
+  const rawText = await callGemini(messages, null, 3, 3000);
   return parseGeminiJSON(rawText);
 }
 
